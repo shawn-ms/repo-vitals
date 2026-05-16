@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Repo Vitals · GitHub 仓库体检</title>
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="hero">
+      <div class="hero-bg"></div>
+      <div class="hero-inner">
+        <div class="brand">
+          <span class="brand-mark">📊</span>
+          <span class="brand-name">Repo Vitals</span>
+        </div>
+        <h1>GitHub 仓库一键体检</h1>
+        <p class="subtitle">粘贴公开仓库地址，30 秒内拿到客观指标 + AI 评分</p>
+
+        <div class="search-row">
+          <el-input
+            v-model="url"
+            size="large"
+            placeholder="https://github.com/fastapi/fastapi  或  fastapi/fastapi"
+            clearable
+            :disabled="loading"
+            @keyup.enter="analyze"
+          ></el-input>
+          <el-button
+            type="primary"
+            size="large"
+            :loading="loading"
+            @click="analyze"
+            class="btn-go"
+          >
+            {{ loading ? '分析中…' : '开始分析' }}
+          </el-button>
+        </div>
+
+        <div class="examples">
+          快速试用：
+          <span class="chip" @click="use('fastapi/fastapi')">fastapi/fastapi</span>
+          <span class="chip" @click="use('vuejs/core')">vuejs/core</span>
+          <span class="chip" @click="use('sigoden/aichat')">sigoden/aichat</span>
+          <span class="chip" @click="use('torvalds/linux')">torvalds/linux</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- 进度面板 -->
+      <transition name="fade">
+        <el-card v-if="loading" class="progress-panel" shadow="hover">
+          <div class="progress-head">
+            <div class="progress-title">
+              <span class="dot pulse"></span>
+              {{ currentStage.label }}
+            </div>
+            <div class="progress-time">{{ elapsedText }}</div>
+          </div>
+          <el-progress
+            :percentage="Math.floor(progress)"
+            :stroke-width="10"
+            :show-text="false"
+            color="#7c5cff"
+          ></el-progress>
+          <div class="stage-list">
+            <div
+              v-for="(s, i) in stages"
+              :key="i"
+              class="stage-item"
+              :class="{ done: i < stageIdx, active: i === stageIdx }"
+            >
+              <span class="stage-icon">
+                <span v-if="i < stageIdx">✓</span>
+                <span v-else-if="i === stageIdx" class="spin">◐</span>
+                <span v-else>·</span>
+              </span>
+              <span class="stage-label">{{ s.label }}</span>
+            </div>
+          </div>
+          <p class="progress-hint" v-if="stageIdx === stages.length - 1">
+            AI 模型正在生成评分与点评，推理模型耗时可能略长，请稍候…
+          </p>
+        </el-card>
+      </transition>
+
+      <!-- 报告 -->
+      <transition name="fade">
+      <section v-if="report && !loading" class="report">
+        <!-- 仓库标题卡 -->
+        <el-card class="repo-card" shadow="hover">
+          <div class="repo-head">
+            <div>
+              <h2>
+                <a :href="report.repo.html_url" target="_blank">{{ report.repo.full_name }}</a>
+                <el-tag v-if="report.repo.archived" type="warning" size="small" effect="dark">已归档</el-tag>
+                <el-tag v-if="report.repo.license" type="info" size="small" effect="plain">{{ report.repo.license }}</el-tag>
+              </h2>
+              <p class="desc">{{ report.repo.description || '(无描述)' }}</p>
+            </div>
+            <a :href="report.repo.html_url" target="_blank" class="repo-open">在 GitHub 打开 ↗</a>
+          </div>
+          <div class="topics" v-if="report.repo.topics && report.repo.topics.length">
+            <el-tag v-for="t in report.repo.topics" :key="t" size="small" type="info" effect="plain" round>{{ t }}</el-tag>
+          </div>
+        </el-card>
+
+        <!-- KPI 卡片行 -->
+        <section class="kpi-row">
+          <div class="kpi"><div class="kpi-icon star">⭐</div><div class="kpi-meta"><div class="kpi-label">Stars</div><div class="kpi-value">{{ fmt(report.metrics.stars) }}</div></div></div>
+          <div class="kpi"><div class="kpi-icon fork">🍴</div><div class="kpi-meta"><div class="kpi-label">Forks</div><div class="kpi-value">{{ fmt(report.metrics.forks) }}</div></div></div>
+          <div class="kpi"><div class="kpi-icon eye">👀</div><div class="kpi-meta"><div class="kpi-label">Watchers</div><div class="kpi-value">{{ fmt(report.metrics.watchers) }}</div></div></div>
+          <div class="kpi"><div class="kpi-icon bug">🐛</div><div class="kpi-meta"><div class="kpi-label">Open Issues</div><div class="kpi-value">{{ fmt(report.metrics.open_issues) }}</div></div></div>
+          <div class="kpi"><div class="kpi-icon age">📅</div><div class="kpi-meta"><div class="kpi-label">仓库年龄</div><div class="kpi-value">{{ fmt(report.metrics.age_days) }}<span class="kpi-unit">天</span></div></div></div>
+          <div class="kpi"><div class="kpi-icon push">⏱</div><div class="kpi-meta"><div class="kpi-label">距上次推送</div><div class="kpi-value">{{ fmt(report.metrics.days_since_push) }}<span class="kpi-unit">天前</span></div></div></div>
+        </section>
+
+        <!-- AI 评分卡 -->
+        <el-card v-if="report.ai && report.ai.available" class="ai-card" shadow="hover">
+          <div class="ai-header">
+            <div class="ai-title-block">
+              <div class="ai-badge">🤖 AI 评分 · MiniMax-M2</div>
+              <p class="comment">{{ report.ai.comment }}</p>
+            </div>
+            <div class="ai-score" :class="scoreLevel(report.ai.score)">
+              <div class="score-value">{{ report.ai.score }}</div>
+              <div class="score-label">/ 100</div>
+            </div>
+          </div>
+          <div class="ai-body">
+            <div class="radar-wrap"><canvas ref="radarRef"></canvas></div>
+            <div class="ai-lists">
+              <div class="ai-list">
+                <h4><span class="ai-list-icon up">▲</span> 优势</h4>
+                <ul><li v-for="(h,i) in report.ai.highlights" :key="'h'+i">{{ h }}</li></ul>
+              </div>
+              <div class="ai-list">
+                <h4><span class="ai-list-icon down">▼</span> 风险</h4>
+                <ul><li v-for="(r,i) in report.ai.risks" :key="'r'+i">{{ r }}</li></ul>
+              </div>
+            </div>
+          </div>
+        </el-card>
+        <el-alert v-else-if="report.ai" type="info" :closable="false" class="ai-fallback" show-icon>
+          AI 评分不可用：{{ report.ai.reason }}（已自动降级，其它指标完整可用）
+        </el-alert>
+
+        <!-- 图表行 -->
+        <section class="charts">
+          <el-card shadow="hover">
+            <div class="chart-title">💬 语言分布</div>
+            <div class="chart-wrap"><canvas ref="langRef"></canvas></div>
+          </el-card>
+          <el-card shadow="hover">
+            <div class="chart-title">📈 近期提交活动</div>
+            <div class="chart-wrap"><canvas ref="commitRef"></canvas></div>
+          </el-card>
+          <el-card shadow="hover" class="span-2">
+            <div class="chart-title">👥 Top 贡献者</div>
+            <div class="chart-wrap tall"><canvas ref="contribRef"></canvas></div>
+          </el-card>
+        </section>
+      </section>
+      </transition>
+
+      <!-- 空状态 -->
+      <section v-if="!report && !loading" class="empty">
+        <div class="empty-illus">📦</div>
+        <p>在上方输入一个公开 GitHub 仓库地址开始分析</p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Built with FastAPI · Vue 3 · Element Plus · Chart.js · MiniMax-M2</span>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus"></script>
+  <script src="https://unpkg.com/chart.js@4/dist/chart.umd.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
