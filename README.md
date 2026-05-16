@@ -2,9 +2,15 @@
 
 > 输入任意公开 GitHub 仓库 URL，30 秒内拿到客观指标 + AI 评分 + 风险提示。
 >
-> 技术栈：**FastAPI · httpx · Pydantic · Vue 3 (CDN) · Element Plus · Chart.js · MiniMax-M2 (via Anthropic-compatible API)**
+> 技术栈：**FastAPI · httpx · Pydantic · Vue 3 (CDN) · Element Plus · Chart.js · MiniMax-M2 (via OpenAI-compatible API)**
 >
 > 开发方法论：**SDD (Spec-Driven Development) + TDD (Test-Driven Development)**
+
+## 🌐 在线体验
+
+**https://repo-vitals.proddos.cc**
+
+![Repo Vitals 示意图](./sample.png)
 
 ---
 
@@ -19,7 +25,7 @@
 | **🤖 AI 评分（加分项）** | MiniMax-M2 综合裁定 0-100 总分 + 5 维度雷达 + 一句话总评 + 优势 / 风险三件套 |
 | **容错** | URL 不合法 / 仓库不存在 / GitHub 限频 / AI 不可用 — 全部按 spec §AC 中文降级 |
 
-界面截图（输入 → 报告）：将 `web/index.html` 用浏览器访问 `http://127.0.0.1:8000/` 即可看到。
+本地启动后浏览器打开 `http://127.0.0.1:8000/` 即可看到完整报告页。
 
 ---
 
@@ -114,12 +120,10 @@ cp .env.example .env
 | 变量 | 缺省值 | 不填的后果 |
 |---|---|---|
 | `GITHUB_TOKEN` | 空 | 匿名访问 GitHub，限频 60 次/小时；高频测试会触发 AC-5 中文降级提示 |
-| `ANTHROPIC_API_KEY` | 空 | AI 评分卡片自动隐藏，前端显示 *"AI 评分不可用，已自动降级"*，其余指标完整可用 |
-| `ANTHROPIC_BASE_URL` | `https://api.minimaxi.com/anthropic` | 默认走 MiniMax-M2 的 Anthropic 兼容网关；可改 Anthropic 官方 / 其它兼容网关 |
+| `AI_API_KEY` | 空 | AI 评分卡片自动隐藏，前端显示 *"AI 评分不可用，已自动降级"*，其余指标完整可用 |
+| `AI_BASE_URL` | `https://api.minimaxi.com/v1` | 默认走 MiniMax-M2 的 OpenAI 兼容网关；可替换为任何 OpenAI 兼容端点 |
 | `AI_MODEL` | `MiniMax-M2` | 模型名 |
 | `CACHE_TTL_SECONDS` | `600` | 同一仓库 10 分钟内复用结果，避免反复消耗 GitHub 配额 |
-
-> **MiniMax-M2 是推理模型**，响应中第一个 block 是 `ThinkingBlock`，第二个才是 `TextBlock`。`app/ai_scorer.py` 已设置 `max_tokens=4096` 给 thinking 留出空间，并通过 `getattr(b,"type","")=="text"` 精确提取最终 JSON。
 
 ### 3. 跑测试（TDD 验证）
 
@@ -171,7 +175,7 @@ github-scan/
 │   ├── url_parser.py              ← spec §3 URL 形式归一化
 │   ├── github_client.py           ← httpx + TTL 缓存 + 202 重试
 │   ├── analyzer.py                ← 指标聚合（纯函数）
-│   ├── ai_scorer.py               ← MiniMax-M2 via anthropic SDK
+│   ├── ai_scorer.py               ← MiniMax-M2 via openai SDK (OpenAI-compatible)
 │   ├── schemas.py                 ← Pydantic
 │   └── routers/analyze.py         ← POST /api/analyze
 ├── tests/                         ← 32 个 pytest 用例 (respx 桩)
